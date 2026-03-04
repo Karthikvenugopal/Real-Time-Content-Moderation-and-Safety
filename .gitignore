@@ -1,0 +1,17 @@
+# Faust runtime data (consumer group offsets, internal topics)
+content-moderation-data/
+
+# ML model checkpoints
+models/*.pkl
+
+# Environment variables — copy .env.example to .env, do not commit
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# macOS
+.DS_Store

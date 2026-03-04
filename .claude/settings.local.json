@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip3:*)",
+      "Bash(docker manifest:*)",
+      "Bash(python3:*)",
+      "Bash(docker compose:*)",
+      "Bash(curl:*)",
+      "Bash(ollama list:*)",
+      "Bash(lsof:*)",
+      "Bash(/Library/Frameworks/Python.framework/Versions/3.13/bin/pip3 install:*)",
+      "Bash(/Library/Frameworks/Python.framework/Versions/3.13/bin/python3:*)"
+    ]
+  }
+}

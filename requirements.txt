@@ -6,3 +6,12 @@ aiokafka>=0.10.0,<0.12.0
 websockets>=12.0
 certifi>=2024.0.0
 httpx>=0.27.0
+
+# ML / Embeddings
+sentence-transformers>=3.0.1
+scikit-learn>=1.5.2
+numpy>=1.26.4
+torch>=2.1.0
+
+# Redis
+redis[hiredis]>=5.0.8

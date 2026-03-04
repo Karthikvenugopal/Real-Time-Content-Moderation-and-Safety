@@ -1,0 +1,8 @@
+# Stream processing
+faust-streaming>=0.10.15
+aiokafka>=0.10.0,<0.12.0
+
+# Ingestion
+websockets>=12.0
+certifi>=2024.0.0
+httpx>=0.27.0

@@ -6,6 +6,8 @@ aiokafka>=0.10.0,<0.12.0
 websockets>=12.0
 certifi>=2024.0.0
 httpx>=0.27.0
+google-api-python-client>=2.140.0
+youtube-transcript-api>=0.6.2
 
 # ML / Embeddings
 sentence-transformers>=3.0.1

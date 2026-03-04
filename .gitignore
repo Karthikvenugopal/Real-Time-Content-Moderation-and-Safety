@@ -6,6 +6,7 @@ models/*.pkl
 
 # Environment variables — copy .env.example to .env, do not commit
 .env
+venv
 
 # Python
 __pycache__/
@@ -15,3 +16,4 @@ __pycache__/
 
 # macOS
 .DS_Store
+.claude/settings.local.json

@@ -9,7 +9,14 @@
       "Bash(ollama list:*)",
       "Bash(lsof:*)",
       "Bash(/Library/Frameworks/Python.framework/Versions/3.13/bin/pip3 install:*)",
-      "Bash(/Library/Frameworks/Python.framework/Versions/3.13/bin/python3:*)"
+      "Bash(/Library/Frameworks/Python.framework/Versions/3.13/bin/python3:*)",
+      "Bash(source:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker info:*)",
+      "Bash(open:*)",
+      "Bash(pip install:*)",
+      "Bash(pkill:*)",
+      "Bash(pgrep:*)"
     ]
   }
 }

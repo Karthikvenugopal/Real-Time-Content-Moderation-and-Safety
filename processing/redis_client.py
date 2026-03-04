@@ -135,21 +135,12 @@ async def append_topic_sample(client: Redis, topic_id: int, text: str, max_sampl
 # Trending sorted set
 # ------------------------------------------------------------------
 
-async def update_trending(client: Redis, topic_id: int) -> None:
+async def update_trending(client: Redis, topic_id: int, key: str = "trending:now") -> None:
     """
-    Increment topic_id in the trending:now sorted set.
+    Increment topic_id in the trending sorted set.
     Periodically prunes stale entries older than the trending window.
     """
-    now = int(time.time())
-    window_start = now - _TRENDING_WINDOW_S
-    key = "trending:now"
-
-    # Increment score for this topic
     await client.zincrby(key, 1, str(topic_id))
-
-    # Occasionally prune topics with very low scores (housekeeping)
-    # Full time-windowed trending would use sorted sets keyed by timestamp;
-    # this simpler approach approximates it with score decay via TTL.
     await client.expire(key, _TRENDING_WINDOW_S * 2)
 
 
@@ -163,11 +154,18 @@ async def get_trending(client: Redis, top_n: int = 10) -> list[tuple[str, float]
 # Flagged posts list
 # ------------------------------------------------------------------
 
-async def push_flagged(client: Redis, uri: str, label: str, text_snippet: str) -> None:
+async def push_flagged(
+    client: Redis,
+    uri: str,
+    label: str,
+    text_snippet: str,
+    source: str = "bluesky",
+    key: str = "flagged:recent",
+) -> None:
     import json
-    payload = json.dumps({"uri": uri, "label": label, "text": text_snippet[:140]})
-    await client.lpush("flagged:recent", payload)
-    await client.ltrim("flagged:recent", 0, _FLAGGED_MAX - 1)
+    payload = json.dumps({"uri": uri, "label": label, "text": text_snippet[:140], "source": source})
+    await client.lpush(key, payload)
+    await client.ltrim(key, 0, _FLAGGED_MAX - 1)
 
 
 async def get_flagged(client: Redis, count: int = 50) -> list[dict]:

@@ -29,5 +29,16 @@ services:
       timeout: 5s
       retries: 5
 
+  redpanda-console:
+    image: redpandadata/console:v2.3.8
+    container_name: redpanda-console
+    ports:
+      - "8080:8080"
+    environment:
+      - KAFKA_BROKERS=redpanda:9092
+    depends_on:
+      redpanda:
+        condition: service_healthy
+
 volumes:
   redpanda_data:

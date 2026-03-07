@@ -37,3 +37,42 @@ KAFKA_TOPIC = os.getenv("TOPIC_BLUESKY_RAW", "bluesky.raw")
 
 # Stats
 _stats = {"received": 0, "published": 0, "errors": 0}
+
+
+def _extract_post(event: dict) -> dict | None:
+    """
+    Parse a Jetstream event into a flat post record.
+    Returns None for events that are not text posts.
+    """
+    try:
+        if event.get("kind") != "commit":
+            return None
+        commit = event.get("commit", {})
+        if commit.get("collection") != "app.bsky.feed.post":
+            return None
+        if commit.get("operation") not in ("create", "update"):
+            return None
+
+        record = commit.get("record", {})
+        text = record.get("text", "").strip()
+        if not text:
+            return None
+
+        langs = record.get("langs", ["und"])
+        # Skip non-English posts to keep moderation focused
+        if langs and not any(l.startswith("en") for l in langs):
+            return None
+
+        return {
+            "did": event.get("did", ""),
+            "uri": f"at://{event.get('did')}/app.bsky.feed.post/{commit.get('rkey', '')}",
+            "text": text,
+            "created_at": record.get("createdAt", datetime.now(timezone.utc).isoformat()),
+            "langs": langs,
+            "ingested_at": datetime.now(timezone.utc).isoformat(),
+            "has_embed": "embed" in record,
+            "reply": record.get("reply") is not None,
+        }
+    except Exception as exc:
+        logger.debug(f"Parse error: {exc}")
+        return None

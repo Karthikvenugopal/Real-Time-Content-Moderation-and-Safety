@@ -149,3 +149,14 @@ async def run() -> None:
             f"Producer stopped. Final stats: recv={_stats['received']:,}  "
             f"published={_stats['published']:,}  errors={_stats['errors']}"
         )
+
+
+def _handle_signal(*_) -> None:
+    logger.info("Shutdown signal received")
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    signal.signal(signal.SIGINT, _handle_signal)
+    signal.signal(signal.SIGTERM, _handle_signal)
+    asyncio.run(run())

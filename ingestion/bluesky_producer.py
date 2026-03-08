@@ -76,3 +76,10 @@ def _extract_post(event: dict) -> dict | None:
     except Exception as exc:
         logger.debug(f"Parse error: {exc}")
         return None
+
+
+async def _produce(producer: AIOKafkaProducer, post: dict) -> None:
+    key = post["did"].encode()
+    value = json.dumps(post).encode()
+    await producer.send(KAFKA_TOPIC, key=key, value=value)
+    _stats["published"] += 1

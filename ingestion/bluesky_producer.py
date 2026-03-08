@@ -83,3 +83,69 @@ async def _produce(producer: AIOKafkaProducer, post: dict) -> None:
     value = json.dumps(post).encode()
     await producer.send(KAFKA_TOPIC, key=key, value=value)
     _stats["published"] += 1
+
+
+async def run() -> None:
+    logger.info(f"Connecting to {JETSTREAM_URL_FULL}")
+    logger.info(f"Publishing to Kafka topic '{KAFKA_TOPIC}' @ {KAFKA_BROKER}")
+
+    producer = AIOKafkaProducer(
+        bootstrap_servers=KAFKA_BROKER,
+        compression_type="gzip",
+        max_batch_size=65536,
+        linger_ms=50,
+    )
+    await producer.start()
+    logger.info("Kafka producer started")
+
+    reconnect_delay = 1.0
+
+    try:
+        while True:
+            try:
+                ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+                async with websockets.connect(
+                    JETSTREAM_URL_FULL,
+                    ssl=ssl_ctx,
+                    ping_interval=20,
+                    ping_timeout=30,
+                    max_size=2**20,  # 1 MB
+                ) as ws:
+                    logger.info("WebSocket connected to BlueSky Jetstream")
+                    reconnect_delay = 1.0  # reset on successful connect
+
+                    async for raw_msg in ws:
+                        try:
+                            event = json.loads(raw_msg)
+                            _stats["received"] += 1
+
+                            post = _extract_post(event)
+                            if post:
+                                await _produce(producer, post)
+
+                            if _stats["received"] % 1000 == 0:
+                                logger.info(
+                                    f"recv={_stats['received']:,}  "
+                                    f"published={_stats['published']:,}  "
+                                    f"errors={_stats['errors']}"
+                                )
+                        except json.JSONDecodeError:
+                            _stats["errors"] += 1
+                        except Exception as exc:
+                            _stats["errors"] += 1
+                            logger.warning(f"Event error: {exc}")
+
+            except websockets.ConnectionClosed as exc:
+                logger.warning(f"WebSocket closed ({exc}), reconnecting in {reconnect_delay}s")
+                await asyncio.sleep(reconnect_delay)
+                reconnect_delay = min(reconnect_delay * 2, 60)
+            except OSError as exc:
+                logger.error(f"Connection error: {exc}, retrying in {reconnect_delay}s")
+                await asyncio.sleep(reconnect_delay)
+                reconnect_delay = min(reconnect_delay * 2, 60)
+    finally:
+        await producer.stop()
+        logger.info(
+            f"Producer stopped. Final stats: recv={_stats['received']:,}  "
+            f"published={_stats['published']:,}  errors={_stats['errors']}"
+        )

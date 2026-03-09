@@ -42,3 +42,51 @@ Rules:
 
 Respond with ONLY valid JSON and nothing else:
 {"label": "<label>", "confidence": <0.0-1.0>, "reason": "<one sentence>"}"""
+
+
+async def classify(text: str, client: httpx.AsyncClient | None = None) -> dict:
+    """
+    Classify ``text`` using the local Ollama model.
+
+    Returns a dict:
+        {
+          "label": str,        # one of _VALID_LABELS
+          "confidence": float, # 0.0 – 1.0
+          "reason": str,
+          "flagged": bool,     # True when label != "safe"
+        }
+    """
+    prompt = f"Post to classify:\n\"\"\"{text[:1000]}\"\"\""
+
+    payload = {
+        "model": OLLAMA_MODEL,
+        "system": _SYSTEM_PROMPT,
+        "prompt": prompt,
+        "stream": False,
+        "options": {
+            "temperature": 0.0,   # deterministic for moderation
+            "num_predict": 128,
+        },
+    }
+
+    own_client = client is None
+    if own_client:
+        client = httpx.AsyncClient(base_url=OLLAMA_URL, timeout=_TIMEOUT)
+
+    try:
+        response = await client.post("/api/generate", json=payload)
+        response.raise_for_status()
+        raw = response.json().get("response", "")
+        return _parse_response(raw)
+    except httpx.TimeoutException:
+        logger.warning(f"Ollama timeout for text snippet: {text[:60]!r}")
+        return _fallback()
+    except httpx.HTTPStatusError as exc:
+        logger.error(f"Ollama HTTP {exc.response.status_code}: {exc}")
+        return _fallback()
+    except Exception as exc:
+        logger.error(f"Ollama unexpected error: {exc}")
+        return _fallback()
+    finally:
+        if own_client:
+            await client.aclose()

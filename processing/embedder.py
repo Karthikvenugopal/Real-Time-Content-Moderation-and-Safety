@@ -47,3 +47,8 @@ def embed(texts: list[str]) -> np.ndarray:
         convert_to_numpy=True,
     )
     return vectors.astype(np.float32)
+
+
+def embed_one(text: str) -> np.ndarray:
+    """Convenience wrapper for a single string. Returns shape (384,)."""
+    return embed([text])[0]

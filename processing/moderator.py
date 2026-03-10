@@ -121,3 +121,12 @@ def _parse_response(raw: str) -> dict:
         "reason": str(data.get("reason", ""))[:200],
         "flagged": label != "safe",
     }
+
+
+def _fallback() -> dict:
+    return {
+        "label": _FALLBACK_LABEL,
+        "confidence": 0.0,
+        "reason": "fallback — model unavailable or timed out",
+        "flagged": False,
+    }

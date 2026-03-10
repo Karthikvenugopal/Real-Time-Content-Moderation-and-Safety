@@ -90,3 +90,34 @@ async def classify(text: str, client: httpx.AsyncClient | None = None) -> dict:
     finally:
         if own_client:
             await client.aclose()
+
+
+def _parse_response(raw: str) -> dict:
+    """Extract JSON from the model response, with graceful fallback."""
+    # Strip markdown code fences if present
+    raw = re.sub(r"```(?:json)?|```", "", raw).strip()
+
+    # Find the first JSON object in the response
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if not match:
+        logger.debug(f"No JSON found in: {raw!r}")
+        return _fallback()
+
+    try:
+        data = json.loads(match.group())
+    except json.JSONDecodeError:
+        return _fallback()
+
+    label = str(data.get("label", "")).lower().strip()
+    if label not in _VALID_LABELS:
+        label = _FALLBACK_LABEL
+
+    confidence = float(data.get("confidence", 0.5))
+    confidence = max(0.0, min(1.0, confidence))
+
+    return {
+        "label": label,
+        "confidence": confidence,
+        "reason": str(data.get("reason", ""))[:200],
+        "flagged": label != "safe",
+    }

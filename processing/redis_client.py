@@ -62,3 +62,43 @@ async def bootstrap(client: Redis, n_topics: int = 20) -> None:
             labels={"type": "moderation", "label": label},
         )
     logger.info("Redis bootstrap complete")
+
+
+# ------------------------------------------------------------------
+# TimeSeries helpers
+# ------------------------------------------------------------------
+
+async def ts_add(client: Redis, key: str, value: float, ts_ms: int | None = None) -> None:
+    """Append a data point. Uses current time if ts_ms is None."""
+    ts = ts_ms if ts_ms is not None else int(time.time() * 1000)
+    try:
+        await client.execute_command("TS.ADD", key, ts, value)
+    except Exception as exc:
+        if "TSDB" in str(exc) and "does not exist" in str(exc):
+            await ensure_timeseries(client, key)
+            await client.execute_command("TS.ADD", key, ts, value)
+        else:
+            logger.error(f"TS.ADD {key}: {exc}")
+
+
+async def ts_range(
+    client: Redis,
+    key: str,
+    from_ms: int = 0,
+    to_ms: int = -1,
+    aggregation: str | None = "sum",
+    bucket_ms: int = 5_000,
+) -> list[tuple[int, float]]:
+    """
+    Return (timestamp_ms, value) pairs from a TimeSeries key.
+    Defaults to SUM aggregation in 5-second buckets.
+    """
+    cmd = ["TS.RANGE", key, from_ms if from_ms else "-", to_ms if to_ms != -1 else "+"]
+    if aggregation:
+        cmd += ["AGGREGATION", aggregation.upper(), bucket_ms]
+    try:
+        result = await client.execute_command(*cmd)
+        return [(int(ts), float(v)) for ts, v in result]
+    except Exception as exc:
+        logger.debug(f"TS.RANGE {key}: {exc}")
+        return []

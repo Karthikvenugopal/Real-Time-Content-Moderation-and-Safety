@@ -157,3 +157,39 @@ async def get_trending(client: Redis, top_n: int = 10) -> list[tuple[str, float]
     """Return (topic_id_str, score) pairs for the top-N trending topics."""
     result = await client.zrevrange("trending:now", 0, top_n - 1, withscores=True)
     return [(k.decode(), score) for k, score in result]
+
+
+# ------------------------------------------------------------------
+# Flagged posts list
+# ------------------------------------------------------------------
+
+async def push_flagged(client: Redis, uri: str, label: str, text_snippet: str) -> None:
+    import json
+    payload = json.dumps({"uri": uri, "label": label, "text": text_snippet[:140]})
+    await client.lpush("flagged:recent", payload)
+    await client.ltrim("flagged:recent", 0, _FLAGGED_MAX - 1)
+
+
+async def get_flagged(client: Redis, count: int = 50) -> list[dict]:
+    import json
+    raw = await client.lrange("flagged:recent", 0, count - 1)
+    out = []
+    for item in raw:
+        try:
+            out.append(json.loads(item.decode()))
+        except Exception:
+            pass
+    return out
+
+
+# ------------------------------------------------------------------
+# Counters
+# ------------------------------------------------------------------
+
+async def increment_counter(client: Redis, key: str, amount: int = 1) -> int:
+    return int(await client.incrby(key, amount))
+
+
+async def get_counter(client: Redis, key: str) -> int:
+    val = await client.get(key)
+    return int(val) if val else 0

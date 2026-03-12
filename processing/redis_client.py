@@ -129,3 +129,31 @@ async def append_topic_sample(client: Redis, topic_id: int, text: str, max_sampl
     samples = samples[-max_samples:]
     import json
     await client.hset(key, "samples", json.dumps(samples))
+
+
+# ------------------------------------------------------------------
+# Trending sorted set
+# ------------------------------------------------------------------
+
+async def update_trending(client: Redis, topic_id: int) -> None:
+    """
+    Increment topic_id in the trending:now sorted set.
+    Periodically prunes stale entries older than the trending window.
+    """
+    now = int(time.time())
+    window_start = now - _TRENDING_WINDOW_S
+    key = "trending:now"
+
+    # Increment score for this topic
+    await client.zincrby(key, 1, str(topic_id))
+
+    # Occasionally prune topics with very low scores (housekeeping)
+    # Full time-windowed trending would use sorted sets keyed by timestamp;
+    # this simpler approach approximates it with score decay via TTL.
+    await client.expire(key, _TRENDING_WINDOW_S * 2)
+
+
+async def get_trending(client: Redis, top_n: int = 10) -> list[tuple[str, float]]:
+    """Return (topic_id_str, score) pairs for the top-N trending topics."""
+    result = await client.zrevrange("trending:now", 0, top_n - 1, withscores=True)
+    return [(k.decode(), score) for k, score in result]

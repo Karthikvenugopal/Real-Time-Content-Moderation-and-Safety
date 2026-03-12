@@ -102,3 +102,30 @@ async def ts_range(
     except Exception as exc:
         logger.debug(f"TS.RANGE {key}: {exc}")
         return []
+
+
+# ------------------------------------------------------------------
+# Topic metadata
+# ------------------------------------------------------------------
+
+async def set_topic_meta(client: Redis, topic_id: int, meta: dict[str, str]) -> None:
+    await client.hset(f"topic:meta:{topic_id}", mapping=meta)
+
+
+async def get_topic_meta(client: Redis, topic_id: int) -> dict[str, str]:
+    raw = await client.hgetall(f"topic:meta:{topic_id}")
+    return {k.decode(): v.decode() for k, v in raw.items()}
+
+
+async def append_topic_sample(client: Redis, topic_id: int, text: str, max_samples: int = 5) -> None:
+    """Keep the last N sample texts for a topic for labelling."""
+    key = f"topic:meta:{topic_id}"
+    existing = await client.hget(key, "samples")
+    samples: list[str] = []
+    if existing:
+        import json
+        samples = json.loads(existing.decode())
+    samples.append(text[:120])
+    samples = samples[-max_samples:]
+    import json
+    await client.hset(key, "samples", json.dumps(samples))

@@ -158,3 +158,14 @@ class TopicClusterer:
             logger.info(f"Loaded checkpoint from {self.checkpoint_path}")
         except Exception as exc:
             logger.warning(f"Could not load checkpoint: {exc}")
+
+
+# Module-level singleton shared across Faust workers in the same process
+_clusterer: TopicClusterer | None = None
+
+
+def get_clusterer() -> TopicClusterer:
+    global _clusterer
+    if _clusterer is None:
+        _clusterer = TopicClusterer()
+    return _clusterer

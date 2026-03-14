@@ -52,3 +52,27 @@ app = faust.App(
 
 raw_topic = app.topic(TOPIC_IN, value_type=bytes)
 moderated_topic = app.topic(TOPIC_OUT, value_type=bytes)
+
+
+# ------------------------------------------------------------------
+# Shared async resources (lazy-initialised on first agent call)
+# ------------------------------------------------------------------
+
+_redis: Redis | None = None
+_http_client: httpx.AsyncClient | None = None
+_initialized = False
+
+
+async def _ensure_resources() -> None:
+    """Lazily create Redis and HTTP client on first use."""
+    global _redis, _http_client, _initialized
+    if _initialized:
+        return
+    _redis = Redis.from_url(REDIS_URL, decode_responses=False)
+    _http_client = httpx.AsyncClient(
+        base_url=os.getenv("OLLAMA_URL", "http://localhost:11434"),
+        timeout=10.0,
+    )
+    await redis_client.bootstrap(_redis)
+    _initialized = True
+    logger.info("Redis and HTTP client initialised")

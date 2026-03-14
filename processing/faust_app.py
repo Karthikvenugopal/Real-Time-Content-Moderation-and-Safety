@@ -76,3 +76,39 @@ async def _ensure_resources() -> None:
     await redis_client.bootstrap(_redis)
     _initialized = True
     logger.info("Redis and HTTP client initialised")
+
+
+# ------------------------------------------------------------------
+# Schemas
+# ------------------------------------------------------------------
+
+@dataclass
+class RawPost(faust.Record, serializer="json"):
+    did: str = ""
+    uri: str = ""
+    text: str = ""
+    created_at: str = ""
+    langs: list[str] = field(default_factory=list)
+    ingested_at: str = ""
+    has_embed: bool = False
+    reply: bool = False
+
+
+@dataclass
+class ModeratedPost(faust.Record, serializer="json"):
+    # Original fields
+    did: str = ""
+    uri: str = ""
+    text: str = ""
+    created_at: str = ""
+    ingested_at: str = ""
+    # Moderation
+    label: str = "safe"
+    confidence: float = 0.0
+    reason: str = ""
+    flagged: bool = False
+    # Clustering
+    topic_id: int = -1
+    # Timing
+    processed_at: float = 0.0
+    latency_ms: float = 0.0

@@ -112,3 +112,88 @@ class ModeratedPost(faust.Record, serializer="json"):
     # Timing
     processed_at: float = 0.0
     latency_ms: float = 0.0
+
+
+# ------------------------------------------------------------------
+# Main agent
+# ------------------------------------------------------------------
+
+@app.agent(raw_topic)
+async def process_post(stream: faust.StreamT) -> None:  # type: ignore[type-arg]
+    await _ensure_resources()
+    clusterer = get_clusterer()
+
+    async for raw_bytes in stream:
+        t0 = time.perf_counter()
+
+        # 1. Parse
+        try:
+            post_dict = json.loads(raw_bytes)
+        except (json.JSONDecodeError, TypeError) as exc:
+            logger.warning(f"JSON parse error: {exc}")
+            continue
+
+        text = post_dict.get("text", "")
+        if not text:
+            continue
+
+        # 2. Embed (CPU, ~1 ms for 1 text)
+        try:
+            embedding: np.ndarray = embedder.embed_one(text)
+        except Exception as exc:
+            logger.error(f"Embedding error: {exc}")
+            continue
+
+        # 3. Moderate (async Ollama, ~200-800 ms on M3)
+        try:
+            mod = await moderator.classify(text, client=_http_client)
+        except Exception as exc:
+            logger.error(f"Moderator error: {exc}")
+            mod = {"label": "safe", "confidence": 0.0, "reason": "", "flagged": False}
+
+        # 4. Cluster (online, thread-safe)
+        topic_id = clusterer.add(embedding)
+        if topic_id is None:
+            topic_id = -1  # model not yet initialised
+
+        # 5. Store in Redis
+        if _redis:
+            ts_ms = int(time.time() * 1000)
+            await redis_client.ts_add(_redis, f"moderation:{mod['label']}", 1, ts_ms)
+            await redis_client.increment_counter(_redis, "counter:total")
+
+            if topic_id >= 0:
+                await redis_client.ts_add(_redis, f"trend:topic:{topic_id}", 1, ts_ms)
+                await redis_client.update_trending(_redis, topic_id)
+                # Periodically update sample texts for topic labelling
+                if int(time.time()) % 10 == 0:
+                    await redis_client.append_topic_sample(_redis, topic_id, text)
+
+            if mod["flagged"]:
+                await redis_client.push_flagged(
+                    _redis, post_dict.get("uri", ""), mod["label"], text
+                )
+                await redis_client.increment_counter(_redis, "counter:flagged")
+
+        latency_ms = (time.perf_counter() - t0) * 1000
+
+        # 6. Publish enriched record
+        enriched = {
+            **post_dict,
+            "label": mod["label"],
+            "confidence": mod["confidence"],
+            "reason": mod["reason"],
+            "flagged": mod["flagged"],
+            "topic_id": topic_id,
+            "processed_at": time.time(),
+            "latency_ms": round(latency_ms, 2),
+        }
+        await moderated_topic.send(value=json.dumps(enriched).encode())
+
+        if int(time.time()) % 30 == 0:
+            logger.info(
+                f"label={mod['label']}  topic={topic_id}  "
+                f"latency={latency_ms:.0f}ms  "
+                f"clusterer_ready={clusterer.is_ready}  "
+                f"total_seen={clusterer.total_seen}"
+            )

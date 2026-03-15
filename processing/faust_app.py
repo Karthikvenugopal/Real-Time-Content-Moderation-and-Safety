@@ -197,3 +197,20 @@ async def process_post(stream: faust.StreamT) -> None:  # type: ignore[type-arg]
                 f"clusterer_ready={clusterer.is_ready}  "
                 f"total_seen={clusterer.total_seen}"
             )
+
+
+# ------------------------------------------------------------------
+# Periodic task: log throughput every 60 s
+# ------------------------------------------------------------------
+
+@app.timer(interval=60.0)
+async def log_throughput() -> None:
+    if _redis:
+        total = await redis_client.get_counter(_redis, "counter:total")
+        flagged = await redis_client.get_counter(_redis, "counter:flagged")
+        trending = await redis_client.get_trending(_redis, top_n=5)
+        rate = flagged / total * 100 if total else 0
+        logger.info(
+            f"[throughput] total={total:,}  flagged={flagged:,} ({rate:.1f}%)  "
+            f"top_topics={[t[0] for t in trending]}"
+        )

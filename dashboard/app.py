@@ -69,3 +69,33 @@ def safe_ts_range(
         return [(int(ts), float(v)) for ts, v in result]
     except Exception:
         return []
+
+
+# ------------------------------------------------------------------
+# Layout
+# ------------------------------------------------------------------
+
+st.title("🛡️ Real-Time Content Moderation · BlueSky Stream")
+st.caption(f"Last refreshed: {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}")
+
+r = get_redis()
+
+# ── Row 1: KPI Cards ──────────────────────────────────────────────
+col1, col2, col3, col4 = st.columns(4)
+
+total = int(r.get("counter:total") or 0)
+flagged = int(r.get("counter:flagged") or 0)
+flag_rate = round(flagged / total * 100, 2) if total else 0.0
+
+with col1:
+    st.metric("Posts Processed", f"{total:,}")
+with col2:
+    st.metric("Posts Flagged", f"{flagged:,}")
+with col3:
+    st.metric("Flag Rate", f"{flag_rate}%")
+with col4:
+    trending_raw = r.zrevrange("trending:now", 0, 0, withscores=True)
+    top_topic = f"Topic {trending_raw[0][0]}" if trending_raw else "—"
+    st.metric("Hottest Topic", top_topic)
+
+st.divider()

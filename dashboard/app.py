@@ -99,3 +99,77 @@ with col4:
     st.metric("Hottest Topic", top_topic)
 
 st.divider()
+
+# ── Row 2: Moderation time-series + Label distribution ───────────
+col_left, col_right = st.columns([2, 1])
+
+LABELS = ["safe", "spam", "hate", "nsfw", "violence"]
+LABEL_COLORS = {
+    "safe": "#4CAF50",
+    "spam": "#FF9800",
+    "hate": "#F44336",
+    "nsfw": "#9C27B0",
+    "violence": "#E91E63",
+}
+
+now_ms = int(time.time() * 1000)
+window_ms = now_ms - 60 * 60 * 1000  # last hour
+
+with col_left:
+    st.subheader("Moderation Events — Last Hour")
+    ts_data: list[dict] = []
+    for label in LABELS:
+        pts = safe_ts_range(r, f"moderation:{label}", window_ms, now_ms, bucket_ms=30_000)
+        for ts, val in pts:
+            ts_data.append(
+                {
+                    "time": datetime.fromtimestamp(ts / 1000, tz=timezone.utc),
+                    "count": val,
+                    "label": label,
+                }
+            )
+    if ts_data:
+        df_ts = pd.DataFrame(ts_data)
+        fig_ts = px.line(
+            df_ts,
+            x="time",
+            y="count",
+            color="label",
+            color_discrete_map=LABEL_COLORS,
+            labels={"count": "Posts / 30 s", "time": ""},
+        )
+        fig_ts.update_layout(
+            height=320,
+            margin=dict(l=0, r=0, t=0, b=0),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+            plot_bgcolor="rgba(0,0,0,0)",
+        )
+        st.plotly_chart(fig_ts, use_container_width=True)
+    else:
+        st.info("Waiting for data …")
+
+with col_right:
+    st.subheader("Label Distribution")
+    label_counts: dict[str, int] = {}
+    for label in LABELS:
+        pts = safe_ts_range(r, f"moderation:{label}", window_ms, now_ms, agg="SUM", bucket_ms=3_600_000)
+        label_counts[label] = int(pts[0][1]) if pts else 0
+
+    if sum(label_counts.values()) > 0:
+        fig_pie = px.pie(
+            names=list(label_counts.keys()),
+            values=list(label_counts.values()),
+            color=list(label_counts.keys()),
+            color_discrete_map=LABEL_COLORS,
+            hole=0.4,
+        )
+        fig_pie.update_layout(
+            height=320,
+            margin=dict(l=0, r=0, t=0, b=0),
+            showlegend=True,
+        )
+        st.plotly_chart(fig_pie, use_container_width=True)
+    else:
+        st.info("Waiting for data …")
+
+st.divider()

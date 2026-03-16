@@ -173,3 +173,74 @@ with col_right:
         st.info("Waiting for data …")
 
 st.divider()
+
+# ── Row 3: Trending Topics + Topic volume heatmap ─────────────────
+col_trend, col_heat = st.columns([1, 2])
+
+with col_trend:
+    st.subheader("Trending Topics (15 min)")
+    trending = r.zrevrange("trending:now", 0, 9, withscores=True)
+    if trending:
+        trend_df = pd.DataFrame(
+            [
+                {
+                    "Topic": f"Topic {tid}",
+                    "Posts": int(score),
+                    "Samples": _get_topic_samples(r, tid),
+                }
+                for tid, score in trending
+            ]
+        )
+        # Bar chart
+        fig_bar = px.bar(
+            trend_df,
+            x="Posts",
+            y="Topic",
+            orientation="h",
+            color="Posts",
+            color_continuous_scale="Viridis",
+        )
+        fig_bar.update_layout(
+            height=340,
+            margin=dict(l=0, r=0, t=0, b=0),
+            yaxis=dict(autorange="reversed"),
+            showlegend=False,
+            coloraxis_showscale=False,
+        )
+        st.plotly_chart(fig_bar, use_container_width=True)
+    else:
+        st.info("Waiting for topics to form …")
+
+with col_heat:
+    st.subheader("Topic Activity Heatmap — Last Hour")
+    heat_data: list[dict] = []
+    for topic_id in range(20):
+        pts = safe_ts_range(
+            r, f"trend:topic:{topic_id}", window_ms, now_ms, bucket_ms=300_000  # 5-min buckets
+        )
+        for ts, val in pts:
+            heat_data.append(
+                {
+                    "time": datetime.fromtimestamp(ts / 1000, tz=timezone.utc).strftime("%H:%M"),
+                    "topic": f"T{topic_id:02d}",
+                    "count": val,
+                }
+            )
+    if heat_data:
+        df_heat = pd.DataFrame(heat_data)
+        pivot = df_heat.pivot_table(index="topic", columns="time", values="count", aggfunc="sum").fillna(0)
+        fig_heat = px.imshow(
+            pivot,
+            color_continuous_scale="YlOrRd",
+            labels=dict(x="Time (UTC)", y="Topic", color="Posts"),
+            aspect="auto",
+        )
+        fig_heat.update_layout(
+            height=340,
+            margin=dict(l=0, r=0, t=0, b=0),
+        )
+        st.plotly_chart(fig_heat, use_container_width=True)
+    else:
+        st.info("Waiting for topic data …")
+
+st.divider()

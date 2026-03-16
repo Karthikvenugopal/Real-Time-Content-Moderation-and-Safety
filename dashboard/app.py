@@ -43,3 +43,29 @@ try:
 except ImportError:
     # Graceful fallback if streamlit-autorefresh is not installed
     pass
+
+
+# ------------------------------------------------------------------
+# Redis connection (cached so it survives re-runs)
+# ------------------------------------------------------------------
+
+@st.cache_resource
+def get_redis() -> redis.Redis:
+    return redis.Redis.from_url(REDIS_URL, decode_responses=True)
+
+
+def safe_ts_range(
+    r: redis.Redis,
+    key: str,
+    from_ms: int,
+    to_ms: int,
+    agg: str = "SUM",
+    bucket_ms: int = 10_000,
+) -> list[tuple[int, float]]:
+    try:
+        result = r.execute_command(
+            "TS.RANGE", key, from_ms, to_ms, "AGGREGATION", agg, bucket_ms
+        )
+        return [(int(ts), float(v)) for ts, v in result]
+    except Exception:
+        return []

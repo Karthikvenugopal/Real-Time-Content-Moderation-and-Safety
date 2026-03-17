@@ -244,3 +244,45 @@ with col_heat:
         st.info("Waiting for topic data …")
 
 st.divider()
+
+# ── Row 4: Flagged Posts Feed ──────────────────────────────────────
+st.subheader("🚨 Recent Flagged Posts")
+flagged_raw = r.lrange("flagged:recent", 0, 19)
+if flagged_raw:
+    flagged_posts = []
+    for item in flagged_raw:
+        try:
+            flagged_posts.append(json.loads(item))
+        except Exception:
+            pass
+
+    for post in flagged_posts:
+        badge_color = LABEL_COLORS.get(post.get("label", "safe"), "#999")
+        label_badge = f":{post.get('label', 'safe')}:"
+        with st.container():
+            cols = st.columns([1, 8, 1])
+            with cols[0]:
+                st.markdown(
+                    f"<span style='background:{badge_color};color:white;"
+                    f"padding:3px 8px;border-radius:4px;font-size:12px'>"
+                    f"{post.get('label','?').upper()}</span>",
+                    unsafe_allow_html=True,
+                )
+            with cols[1]:
+                st.text(post.get("text", "")[:200])
+else:
+    st.info("No flagged posts yet.")
+
+# ------------------------------------------------------------------
+# Helper (defined after UI so Streamlit doesn't hoist it)
+# ------------------------------------------------------------------
+
+def _get_topic_samples(r: redis.Redis, topic_id: str) -> str:
+    try:
+        raw = r.hget(f"topic:meta:{topic_id}", "samples")
+        if raw:
+            samples = json.loads(raw)
+            return " · ".join(s[:40] for s in samples[:2])
+    except Exception:
+        pass
+    return ""

@@ -134,3 +134,119 @@ def _build_record(item: dict, text: str) -> dict:
         "channel_title": snippet.get("channelTitle", ""),
         "title": snippet.get("title", ""),
     }
+
+
+# ------------------------------------------------------------------
+# Async main loop
+# ------------------------------------------------------------------
+
+async def run() -> None:
+    if not YOUTUBE_API_KEY:
+        logger.error("YOUTUBE_API_KEY is not set. Add it to .env and retry.")
+        sys.exit(1)
+
+    loop = asyncio.get_event_loop()
+
+    # Build the YouTube client once (sync; fetches discovery doc)
+    youtube = await loop.run_in_executor(
+        None, lambda: yt_build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
+    )
+
+    producer = AIOKafkaProducer(
+        bootstrap_servers=KAFKA_BROKER,
+        compression_type="gzip",
+        max_batch_size=65536,
+        linger_ms=50,
+    )
+    await producer.start()
+
+    logger.info(f"Publishing to Kafka topic '{KAFKA_TOPIC}' @ {KAFKA_BROKER}")
+    logger.info(
+        f"YouTube poller started | query='{SEARCH_QUERY}' | "
+        f"max_results={MAX_RESULTS} | interval={POLL_INTERVAL}s"
+    )
+
+    published_after: str | None = None  # set to newest seen timestamp after first poll
+
+    try:
+        while True:
+            t0 = time.monotonic()
+            _stats["polls"] += 1
+            batch_count = 0
+
+            try:
+                items: list[dict] = await loop.run_in_executor(
+                    None, _fetch_shorts, youtube, published_after
+                )
+            except HttpError as exc:
+                logger.error(f"YouTube API error (poll #{_stats['polls']}): {exc}")
+                _stats["errors"] += 1
+                await asyncio.sleep(POLL_INTERVAL)
+                continue
+
+            newest_ts: str | None = None
+
+            for item in items:
+                video_id = item["id"].get("videoId", "")
+                if not video_id or video_id in _seen_ids:
+                    _stats["skipped"] += 1
+                    continue
+
+                published_at = item["snippet"].get("publishedAt", "")
+                if published_at and (newest_ts is None or published_at > newest_ts):
+                    newest_ts = published_at
+
+                # Captions (blocking I/O → thread pool)
+                transcript = await loop.run_in_executor(None, _fetch_transcript, video_id)
+
+                if transcript:
+                    text = transcript
+                else:
+                    # Fall back to title + description so the video isn't silently dropped
+                    snippet = item["snippet"]
+                    text = f"{snippet.get('title', '')} {snippet.get('description', '')}".strip()
+                    if not text:
+                        _stats["skipped"] += 1
+                        _mark_seen(video_id)
+                        continue
+                    logger.debug(f"No transcript for {video_id} — using title+description")
+
+                record = _build_record(item, text)
+                key = (record["did"] or video_id).encode()
+                fut = await producer.send(KAFKA_TOPIC, key=key, value=json.dumps(record).encode())
+                meta = await fut  # wait for broker ACK
+                logger.debug(f"Published {video_id} → offset {meta.offset}")
+                _mark_seen(video_id)
+                _stats["published"] += 1
+                batch_count += 1
+
+            if newest_ts:
+                published_after = newest_ts
+
+            await producer.flush()
+            elapsed = time.monotonic() - t0
+            logger.info(
+                f"[poll #{_stats['polls']}] new={batch_count}  "
+                f"total={_stats['published']:,}  skipped={_stats['skipped']}  "
+                f"errors={_stats['errors']}  elapsed={elapsed:.1f}s"
+            )
+
+            await asyncio.sleep(max(0.0, POLL_INTERVAL - elapsed))
+
+    finally:
+        await producer.stop()
+        logger.info(
+            f"Stopped. polls={_stats['polls']}  "
+            f"published={_stats['published']:,}  errors={_stats['errors']}"
+        )
+
+
+def _handle_signal(*_) -> None:
+    logger.info("Shutdown signal received")
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    signal.signal(signal.SIGINT, _handle_signal)
+    signal.signal(signal.SIGTERM, _handle_signal)
+    asyncio.run(run())

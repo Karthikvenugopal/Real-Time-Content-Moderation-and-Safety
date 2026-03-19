@@ -98,3 +98,39 @@ def _fetch_shorts(youtube, published_after: str | None) -> list[dict]:
         params["publishedAfter"] = published_after
     response = youtube.search().list(**params).execute()
     return response.get("items", [])
+
+
+def _fetch_transcript(video_id: str) -> str | None:
+    """Return joined caption text for a video, or None if unavailable."""
+    try:
+        segments = YouTubeTranscriptApi().fetch(
+            video_id, languages=["en", "en-US", "en-GB"]
+        )
+        return " ".join(seg.text for seg in segments).strip() or None
+    except (NoTranscriptFound, TranscriptsDisabled):
+        return None
+    except Exception as exc:
+        logger.debug(f"Transcript fetch failed for {video_id}: {exc}")
+        return None
+
+
+def _build_record(item: dict, text: str) -> dict:
+    """Map a YouTube API item to the pipeline's standard message schema."""
+    snippet = item["snippet"]
+    video_id = item["id"]["videoId"]
+    return {
+        # Standard fields consumed by faust_app.py
+        "did": snippet.get("channelId", ""),
+        "uri": f"https://www.youtube.com/watch?v={video_id}",
+        "text": text,
+        "created_at": snippet.get("publishedAt", datetime.now(timezone.utc).isoformat()),
+        "langs": ["en"],
+        "ingested_at": datetime.now(timezone.utc).isoformat(),
+        "has_embed": True,
+        "reply": False,
+        # YouTube-specific extras (passed through, usable in future processing)
+        "source": "youtube",
+        "video_id": video_id,
+        "channel_title": snippet.get("channelTitle", ""),
+        "title": snippet.get("title", ""),
+    }

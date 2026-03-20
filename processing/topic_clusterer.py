@@ -74,14 +74,14 @@ class TopicClusterer:
         otherwise returns None.
         """
         with _lock:
-            self._buffer.append(embedding.astype(np.float32))
+            self._buffer.append(embedding.astype(np.float64))
             self._total_seen += 1
 
             if len(self._buffer) >= self.batch_size:
                 self._flush()
 
             if self._initialized:
-                return int(self._kmeans.predict([embedding])[0])
+                return int(self._kmeans.predict([embedding.astype(np.float64)])[0])
             return None
 
     def predict(self, embedding: np.ndarray) -> int | None:
@@ -89,7 +89,7 @@ class TopicClusterer:
         with _lock:
             if not self._initialized:
                 return None
-            return int(self._kmeans.predict([embedding])[0])
+            return int(self._kmeans.predict([embedding.astype(np.float64)])[0])
 
     def get_centroids(self) -> np.ndarray | None:
         """Return cluster centroids, shape (n_clusters, 384), or None."""
